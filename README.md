@@ -4,7 +4,19 @@ Train a GPT on your Mac.
 
 Not inference. Not fine-tuning someone else's model. Training from scratch.
 
-> **USE AT YOUR OWN RISK.** The ANE engine uses Apple's **private, undocumented** Neural Engine APIs. This is unsupported, may violate Apple's Terms of Service, and could break on any macOS update. There is no warranty, no guarantee, and no one to call if something goes wrong. The MLX engine uses only public Apple APIs and carries no such risk. By running this software you accept full responsibility for whatever happens to your machine. **Your Mac. Your risk. You were warned.**
+## What This Is
+
+Two accelerators. One chip. Your Mac.
+
+- **ANE** (Apple Neural Engine) — native Obj-C, private APIs, 38 TOPS
+- **MLX** (Apple's ML framework) — native Python, bf16, GPU
+
+Same dataset as Karpathy's original autoresearch (climbmix-400B).
+Same tokenizer (rustbpe, vocab=8192).
+Same metric (val_bpb).
+**Your results are directly comparable to NVIDIA H100 runs.**
+
+We ran 400+ experiments on an M4 Max 128GB. Now you can run yours.
 
 ---
 
@@ -113,6 +125,24 @@ Each engine writes results to a shared JSONL file. Discoveries from one inform t
 
 ---
 
+## What Success Looks Like
+
+![example results](results/train-my-mac.png)
+
+After the sweep: you know your best config, val_bpb under 2.5.
+
+After overnight:
+- ANE: val_bpb under 1.8, possibly under 1.7
+- MLX: val_bpb under 1.4 with Muon
+
+Our bests:
+- ANE: **1.595** (M4 Max 128GB, 72K steps, 8.2 hours)
+- MLX: **1.266** (M4 Max 128GB, Muon + AdamW, 259 experiments)
+
+Getting within 0.1-0.2 of those on lesser hardware is a great result.
+
+---
+
 ## Cleanup
 
 Remove everything setup created and start fresh.
@@ -132,96 +162,6 @@ What gets removed:
 | `results/*.log` and summaries | |
 
 The sample result PNGs in `results/` are kept. Run `bash setup.sh` to rebuild everything.
-
----
-
-## What Success Looks Like
-
-After the sweep: you know your best config, val_bpb under 2.5.
-
-After overnight:
-- ANE: val_bpb under 1.8, possibly under 1.7
-- MLX: val_bpb under 1.4 with Muon
-
-Our bests:
-- ANE: **1.595** (M4 Max 128GB)
-- MLX: **1.266** (M4 Max 128GB)
-
-Getting within 0.1-0.2 of those on lesser hardware is a great result.
-
----
-
-## The Warning (In Full)
-
-This section exists because it should.
-
-The ANE engine uses Apple's **private** `AppleNeuralEngine.framework` via `dlopen`. This means:
-
-- **Undocumented.** There is no official API reference. The interface was reverse-engineered.
-- **Unsupported.** Apple does not support third-party use of this framework.
-- **May violate Apple's Terms of Service.** Using private frameworks is explicitly discouraged by Apple and may breach the macOS EULA.
-- **Could break on any macOS update.** Apple can change or remove the private API at any time without notice.
-- **No warranty.** This software is provided as-is. No guarantees of correctness, safety, or fitness for any purpose.
-- **Could stress your hardware.** Long training runs push the Neural Engine, GPU, and thermal system continuously for hours. Monitor your temps.
-
-The MLX engine uses Apple's **public** ML framework. No private APIs. No risk beyond normal GPU compute.
-
-**You are responsible for what runs on your machine.** If you are not comfortable with these risks, use `bash sweep.sh mlx` and `bash overnight.sh mlx` to run only the MLX engine.
-
----
-
-## What This Is
-
-Two accelerators. One chip. Your Mac.
-
-- **ANE** (Apple Neural Engine) — native Obj-C, private APIs, 38 TOPS
-- **MLX** (Apple's ML framework) — native Python, bf16, GPU
-
-Same dataset as Karpathy's original autoresearch (climbmix-400B).
-Same tokenizer (rustbpe, vocab=8192).
-Same metric (val_bpb).
-**Your results are directly comparable to NVIDIA H100 runs.**
-
-We ran 400+ experiments on an M4 Max 128GB. Now you can run yours.
-
-### ANE (Apple Neural Engine)
-
-Native Obj-C. Uses private `AppleNeuralEngine.framework` APIs.
-Weights packed into IOSurface inputs. Kernels compile once at startup.
-Weight updates are just memcpy. No recompilation.
-
-- 48.8M param GPT (NL=6, SEQ=512, DIM=768)
-- ~80-100ms/step on M4 Max
-- Invisible to Activity Monitor
-- Best: val_bpb = 1.595
-
-### MLX (Apple's ML Framework)
-
-Python. Apple's native ML framework, purpose-built for Apple Silicon.
-Native bf16. Unified memory. Muon + AdamW optimizer.
-
-- 15.7M param GPT (optimized architecture)
-- Native bf16 (unlike MPS where it was 2.6x slower)
-- Best: val_bpb = 1.266
-
-### Gossip System
-
-Both engines write results to a shared JSONL file at `~/.cache/autoresearch/gossip/shared_experiments.jsonl`. Each agent reads the other's experiments before planning its next one. Cross-pollination: ANE discoveries inform MLX experiments and vice versa.
-
----
-
-## What We Did
-
-We built an autonomous research loop on Apple Silicon.
-
-An AI agent modifies training code. Runs a 5-minute experiment. Evaluates `val_bpb` (validation bits per byte — lower is better). Keeps the change if it improved. Discards if it didn't. Repeats overnight.
-
-400+ experiments. Three accelerators. One M4 Max 128GB.
-
-**ANE best:** val_bpb = 1.595 (72K steps, 8.2 hours, native Obj-C)
-**MLX best:** val_bpb = 1.266 (Muon + AdamW optimizer, 259 experiments)
-
-The gap between them? That's where the research is.
 
 ---
 
@@ -271,6 +211,42 @@ claude --dangerously-skip-permissions -p "Read program.md and start autoresearch
 
 ---
 
+## Under the Hood
+
+### ANE (Apple Neural Engine)
+
+Native Obj-C. Uses private `AppleNeuralEngine.framework` APIs.
+Weights packed into IOSurface inputs. Kernels compile once at startup.
+Weight updates are just memcpy. No recompilation.
+
+- 48.8M param GPT (NL=6, SEQ=512, DIM=768)
+- ~80-100ms/step on M4 Max
+- Invisible to Activity Monitor
+- Best: val_bpb = 1.595
+
+### MLX (Apple's ML Framework)
+
+Python. Apple's native ML framework, purpose-built for Apple Silicon.
+Native bf16. Unified memory. Muon + AdamW optimizer.
+
+- 15.7M param GPT (optimized architecture)
+- Native bf16 (unlike MPS where it was 2.6x slower)
+- Best: val_bpb = 1.266
+
+### Gossip System
+
+Both engines write results to a shared JSONL file at `~/.cache/autoresearch/gossip/shared_experiments.jsonl`. Each agent reads the other's experiments before planning its next one. Cross-pollination: ANE discoveries inform MLX experiments and vice versa.
+
+### How We Got Here
+
+We built an autonomous research loop on Apple Silicon. An AI agent modifies training code, runs a 5-minute experiment, evaluates val_bpb, keeps the change if it improved, discards if it didn't, and repeats overnight.
+
+400+ experiments. Two accelerators. One M4 Max 128GB.
+
+The gap between ANE and MLX? That's where the research is.
+
+---
+
 ## Troubleshooting
 
 | Problem | Fix |
@@ -292,6 +268,23 @@ claude --dangerously-skip-permissions -p "Read program.md and start autoresearch
 - [maderix](https://github.com/maderix) — ANE private API reverse engineering
 - [trevin-creator](https://github.com/trevin-creator) — MLX port
 - [Apple MLX team](https://github.com/ml-explore/mlx)
+
+---
+
+## Warning
+
+The ANE engine uses Apple's **private** `AppleNeuralEngine.framework` via `dlopen`. This means:
+
+- **Undocumented.** There is no official API reference. The interface was reverse-engineered.
+- **Unsupported.** Apple does not support third-party use of this framework.
+- **May violate Apple's Terms of Service.** Using private frameworks is explicitly discouraged by Apple and may breach the macOS EULA.
+- **Could break on any macOS update.** Apple can change or remove the private API at any time without notice.
+- **No warranty.** This software is provided as-is. No guarantees of correctness, safety, or fitness for any purpose.
+- **Could stress your hardware.** Long training runs push the Neural Engine, GPU, and thermal system continuously for hours. Monitor your temps.
+
+The MLX engine uses Apple's **public** ML framework. No private APIs. No risk beyond normal GPU compute.
+
+**You are responsible for what runs on your machine.** If you are not comfortable with these risks, use `bash sweep.sh mlx` and `bash overnight.sh mlx` to run only the MLX engine.
 
 ## License
 
