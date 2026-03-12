@@ -1,6 +1,6 @@
 # train-my-mac
 
-Train a GPT on your Mac. For real.
+Train a GPT on your Mac.
 
 Not inference. Not fine-tuning someone else's model. Training from scratch.
 
@@ -47,9 +47,9 @@ bash setup.sh --yes
 | Tier | Memory | Examples | What You Get |
 |------|--------|---------|--------------|
 | Minimum | 16 GB | M1, M2, M3 base | MLX only. ANE light preset. |
-| Recommended | 24-36 GB | M2 Pro, M3 Pro, M4 Pro | Both accelerators. Standard config. |
-| Ideal | 48-128 GB | M3 Max, M4 Max | Full config. Fast steps. Gossip. |
-| Beast | 192 GB | M4 Ultra | Untested. You tell us. |
+| Okay | 24-36 GB | M2 Pro, M3 Pro, M4 Pro | Both accelerators. Standard config. |
+| Recommended | 48-128 GB | M3 Max, M4 Max | Full config. Fast steps. Gossip. |
+| Ideal | 192 GB | M3 Ultra | The setup. Untested. You tell us. |
 
 Below 16GB: not supported.
 
