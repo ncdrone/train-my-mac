@@ -60,9 +60,9 @@ bash setup.sh
 
 The setup script will:
 1. Check your hardware and recommend a tier
-2. Clone the training repos (ANE + MLX)
+2. Clone the training repos into `engines/` (ANE + MLX — not included in this repo)
 3. Install dependencies
-4. Download the Karpathy climbmix-400B dataset
+4. Download the Karpathy climbmix-400B dataset (~500 MB)
 5. Build the native ANE binary
 6. Set up the MLX environment
 7. Run smoke tests on both accelerators

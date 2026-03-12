@@ -223,8 +223,8 @@ fi
 
 echo ""
 echo -e "  ${CYAN}Generating results graphic...${NC}"
-if python3 "$SCRIPT_DIR/visualize.py" "$ENGINE" 2>/dev/null; then
-    echo -e "  ${GREEN}Saved to: results/your_results.png${NC}"
+if python3 "$SCRIPT_DIR/visualize.py" 2>/dev/null; then
+    echo -e "  ${GREEN}Saved to results/ and ~/Desktop/${NC}"
 else
     echo -e "  ${YELLOW}Visualization failed. Run manually: python3 visualize.py${NC}"
 fi

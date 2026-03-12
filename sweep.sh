@@ -117,6 +117,13 @@ if [ "$DO_ANE" = true ]; then
     BEST_LR=$(echo "$BEST_LR_LINE" | cut -d'|' -f3)
     BEST_LR_BPB=$(echo "$BEST_LR_LINE" | cut -d'|' -f5)
 
+    # Fallback if all LRs exploded
+    if [ -z "$BEST_LR" ]; then
+        echo -e "  ${YELLOW}All LRs exploded! Falling back to conservative LR=1e-4${NC}"
+        BEST_LR="1e-4"
+        BEST_LR_BPB="N/A"
+    fi
+
     echo -e "  ${GREEN}Best LR: $BEST_LR (val_bpb=$BEST_LR_BPB)${NC}"
     echo ""
 
@@ -129,6 +136,12 @@ if [ "$DO_ANE" = true ]; then
     BEST_ACCUM_LINE=$(grep "|ok$" "$RESULTS_DIR/sweep_ane_summary.txt" | tail -2 | sort -t'|' -k5 -n | head -1)
     BEST_ANE_ACCUM=$(echo "$BEST_ACCUM_LINE" | cut -d'|' -f4)
     BEST_ANE_BPB=$(echo "$BEST_ACCUM_LINE" | cut -d'|' -f5)
+
+    # Fallback if accum sweep also exploded
+    if [ -z "$BEST_ANE_ACCUM" ]; then
+        BEST_ANE_ACCUM="2"
+        BEST_ANE_BPB="${BEST_LR_BPB}"
+    fi
 
     # Print ANE summary
     echo -e "${CYAN}=========================================================${NC}"
