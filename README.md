@@ -46,10 +46,10 @@ bash setup.sh --yes
 
 | Tier | Memory | Examples | What You Get |
 |------|--------|---------|--------------|
-| Minimum | 16 GB | M1, M2, M3 base | MLX only. ANE light preset. |
+| Minimum | 16 GB | M1, M2, M3 base, M5 Air | MLX only. ANE light preset. |
 | Okay | 24-36 GB | M2 Pro, M3 Pro, M4 Pro | Both accelerators. Standard config. |
-| Recommended | 48-128 GB | M3 Max, M4 Max | Full config. Fast steps. Gossip. |
-| Ideal | 192 GB | M3 Ultra | The setup. Untested. You tell us. |
+| Recommended | 48-128 GB | M3/M4 Max, M5 Max | Full config. Fast steps. Gossip. |
+| Ideal | 128+ GB | M3 Ultra (256 GB), M5 Ultra | The setup. You tell us. |
 
 Below 16GB: not supported.
 
