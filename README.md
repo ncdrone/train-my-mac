@@ -4,7 +4,13 @@ Train a GPT on your Mac. For real.
 
 Not inference. Not fine-tuning someone else's model. Training from scratch.
 
+> **USE AT YOUR OWN RISK.** The ANE engine uses Apple's **private, undocumented** Neural Engine APIs. This is unsupported, may violate Apple's Terms of Service, and could break on any macOS update. There is no warranty, no guarantee, and no one to call if something goes wrong. The MLX engine uses only public Apple APIs and carries no such risk. By running this software you accept full responsibility for whatever happens to your machine. **Your Mac. Your risk. You were warned.**
+
+---
+
 ## Quick Start
+
+Three commands. That's it.
 
 ```bash
 git clone https://github.com/ncdrone/train-my-mac.git
@@ -12,9 +18,9 @@ cd train-my-mac
 bash setup.sh
 ```
 
-That's it. One script does everything: checks your hardware, clones the engines, installs deps, downloads data, builds the native binary, and runs smoke tests.
+Setup does everything: checks your hardware, clones the engines, installs dependencies, downloads the dataset (~500 MB), builds the native ANE binary, and runs smoke tests on both accelerators.
 
-Then train:
+When it finishes, train:
 
 ```bash
 bash sweep.sh         # find your best config (~30 min)
@@ -23,7 +29,7 @@ bash overnight.sh mlx # or train on MLX instead
 bash gossip.sh        # run both engines simultaneously (advanced)
 ```
 
-Pass `--yes` to skip all prompts:
+Skip all prompts with `--yes`:
 
 ```bash
 bash setup.sh --yes
@@ -36,44 +42,7 @@ bash setup.sh --yes
 - Xcode Command Line Tools (`xcode-select --install`)
 - [uv](https://docs.astral.sh/uv/) (auto-installed if missing)
 
----
-
-## What This Is
-
-Two accelerators. One chip. Your Mac.
-
-- **ANE** (Apple Neural Engine) — native Obj-C, private APIs, 38 TOPS
-- **MLX** (Apple's ML framework) — native Python, bf16, GPU
-
-Both run simultaneously. Zero interference.
-They talk to each other through a gossip system.
-Results from one inform the other.
-
-Same dataset as Karpathy's original autoresearch (climbmix-400B).
-Same tokenizer (rustbpe, vocab=8192).
-Same metric (val_bpb).
-**Your results are directly comparable to NVIDIA H100 runs.**
-
-We ran 400+ experiments on an M4 Max 128GB.
-Now you can run yours.
-
----
-
-## The Warning
-
-The ANE path uses Apple's **private** `AppleNeuralEngine.framework` via `dlopen`.
-
-- Undocumented. Unsupported. May violate Apple's Terms of Service.
-- Could break on any macOS update.
-- No warranty. No guarantees.
-
-The MLX path uses Apple's public ML framework. No private APIs.
-
-Your Mac. Your risk.
-
----
-
-## Hardware Tiers
+### Hardware Tiers
 
 | Tier | Memory | Examples | What You Get |
 |------|--------|---------|--------------|
@@ -88,26 +57,26 @@ Below 16GB: not supported.
 
 ## What Setup Does
 
-`setup.sh` handles everything in order:
+`bash setup.sh` runs six steps in order:
 
-1. Checks your hardware and recommends a tier
-2. Clones the training engines into `engines/` (ANE + MLX)
-3. Installs all dependencies via `uv sync`
-4. Downloads the Karpathy climbmix-400B dataset (~500 MB)
-5. Builds the native ANE binary
-6. Runs smoke tests on both accelerators
+| Step | What | Details |
+|------|------|---------|
+| 1 | Hardware detection | Identifies your chip, memory, tier |
+| 2 | Clone engines | ANE (native Obj-C) + MLX (Python) into `engines/` |
+| 3 | Install dependencies | `uv sync` for both engines (isolated venvs) |
+| 4 | Download data | Karpathy climbmix-400B, ~500 MB, tokenized |
+| 5 | Build ANE binary | Compiles native training loop with Xcode CLT |
+| 6 | Smoke tests | 50 steps on each engine to verify everything works |
+
+Config is saved to `my_config.txt`. All subsequent scripts read from it.
 
 ---
 
-## Phase 1: The Sweep (~30 min per engine)
+## Training
 
-`sweep.sh` runs short experiments to find what works on your hardware.
+### Phase 1: Sweep (~30 min per engine)
 
-**What it tests:**
-- Learning rate: 1e-4, 2.5e-4, 5e-4, 1e-3
-- Gradient accumulation: 1 vs 2
-
-Each experiment runs for 5 minutes. The winning config is saved.
+Short experiments to find what works on your hardware.
 
 ```bash
 bash sweep.sh         # sweep ANE (default)
@@ -115,35 +84,54 @@ bash sweep.sh mlx     # sweep MLX
 bash sweep.sh both    # sweep both (1 hour total)
 ```
 
----
+Tests learning rates (1e-4, 2.5e-4, 5e-4, 1e-3) and gradient accumulation (1 vs 2). Each experiment runs 5 minutes. Best config is saved automatically.
 
-## Phase 2: The Overnight Run
+### Phase 2: Overnight Run
 
-`overnight.sh` runs 72K steps with your discovered config.
+Full training with your discovered config. Auto-launches in tmux so closing your terminal won't kill the run.
 
 ```bash
-bash overnight.sh           # ANE overnight
+bash overnight.sh           # ANE overnight (72K steps, 5-8 hours)
 bash overnight.sh mlx       # MLX overnight
-bash overnight.sh --lr 5e-4 # override config
+bash overnight.sh --lr 5e-4 # override learning rate
+bash overnight.sh --steps 10000  # shorter run
 ```
 
-Launches in tmux automatically so closing your terminal won't kill the run.
+Reattach anytime: `tmux attach -t train-my-mac`
 
 When it finishes, `visualize.py` generates a results graphic comparing your run to our research.
 
----
+### Phase 3: Gossip (Advanced)
 
-## Phase 3: Gossip (Advanced)
-
-Run both engines simultaneously with the gossip system active.
-Each engine checks the other's results every 100 steps.
+Both engines running simultaneously on the same chip. ANE on the Neural Engine, MLX on the GPU. Zero interference.
 
 ```bash
-bash gossip.sh    # launches ANE + MLX in parallel with shared gossip
+bash gossip.sh    # launches both in parallel with shared gossip
 ```
 
-This is how we got our best results. ANE found that eps=1e-10 helps.
-MLX found that Muon optimizer dominates. Cross-pollination compounds.
+Each engine writes results to a shared JSONL file. Discoveries from one inform the other. This is how we got our best results.
+
+---
+
+## Cleanup
+
+Remove everything setup created and start fresh.
+
+```bash
+bash clean.sh          # interactive — confirms before deleting
+bash clean.sh --yes    # delete engines, config, and logs without prompting
+bash clean.sh --all    # also delete cached dataset (~1 GB in ~/.cache/autoresearch)
+```
+
+What gets removed:
+
+| `clean.sh` | `clean.sh --all` |
+|------------|------------------|
+| `engines/` (cloned repos, venvs, builds) | everything in the left column |
+| `my_config.txt` | `~/.cache/autoresearch/` (dataset + tokenizer) |
+| `results/*.log` and summaries | |
+
+The sample result PNGs in `results/` are kept. Run `bash setup.sh` to rebuild everything.
 
 ---
 
@@ -163,7 +151,38 @@ Getting within 0.1-0.2 of those on lesser hardware is a great result.
 
 ---
 
-## The Two Engines
+## The Warning (In Full)
+
+This section exists because it should.
+
+The ANE engine uses Apple's **private** `AppleNeuralEngine.framework` via `dlopen`. This means:
+
+- **Undocumented.** There is no official API reference. The interface was reverse-engineered.
+- **Unsupported.** Apple does not support third-party use of this framework.
+- **May violate Apple's Terms of Service.** Using private frameworks is explicitly discouraged by Apple and may breach the macOS EULA.
+- **Could break on any macOS update.** Apple can change or remove the private API at any time without notice.
+- **No warranty.** This software is provided as-is. No guarantees of correctness, safety, or fitness for any purpose.
+- **Could stress your hardware.** Long training runs push the Neural Engine, GPU, and thermal system continuously for hours. Monitor your temps.
+
+The MLX engine uses Apple's **public** ML framework. No private APIs. No risk beyond normal GPU compute.
+
+**You are responsible for what runs on your machine.** If you are not comfortable with these risks, use `bash sweep.sh mlx` and `bash overnight.sh mlx` to run only the MLX engine.
+
+---
+
+## What This Is
+
+Two accelerators. One chip. Your Mac.
+
+- **ANE** (Apple Neural Engine) — native Obj-C, private APIs, 38 TOPS
+- **MLX** (Apple's ML framework) — native Python, bf16, GPU
+
+Same dataset as Karpathy's original autoresearch (climbmix-400B).
+Same tokenizer (rustbpe, vocab=8192).
+Same metric (val_bpb).
+**Your results are directly comparable to NVIDIA H100 runs.**
+
+We ran 400+ experiments on an M4 Max 128GB. Now you can run yours.
 
 ### ANE (Apple Neural Engine)
 
@@ -187,11 +206,7 @@ Native bf16. Unified memory. Muon + AdamW optimizer.
 
 ### Gossip System
 
-Both engines write results to a shared JSONL file.
-Each agent reads the other's experiments before planning its next one.
-Cross-pollination: ANE discoveries inform MLX experiments and vice versa.
-
-The shared file lives at `~/.cache/autoresearch/gossip/shared_experiments.jsonl`.
+Both engines write results to a shared JSONL file at `~/.cache/autoresearch/gossip/shared_experiments.jsonl`. Each agent reads the other's experiments before planning its next one. Cross-pollination: ANE discoveries inform MLX experiments and vice versa.
 
 ---
 
@@ -199,11 +214,7 @@ The shared file lives at `~/.cache/autoresearch/gossip/shared_experiments.jsonl`
 
 We built an autonomous research loop on Apple Silicon.
 
-An AI agent modifies training code.
-Runs a 5-minute experiment.
-Evaluates `val_bpb` (validation bits per byte — lower is better).
-Keeps the change if it improved. Discards if it didn't.
-Repeats overnight.
+An AI agent modifies training code. Runs a 5-minute experiment. Evaluates `val_bpb` (validation bits per byte — lower is better). Keeps the change if it improved. Discards if it didn't. Repeats overnight.
 
 400+ experiments. Three accelerators. One M4 Max 128GB.
 
@@ -271,6 +282,7 @@ claude --dangerously-skip-permissions -p "Read program.md and start autoresearch
 | Fans spinning hard | Normal. If ms/step climbs, thermal throttling — pause. |
 | val_bpb plateaus | More steps. Model still improving at 40K+. |
 | MLX: bf16 errors | `uv sync` in `engines/autoresearch-mlx/` |
+| Want a fresh start | `bash clean.sh --all` then `bash setup.sh` |
 
 ---
 
@@ -283,4 +295,4 @@ claude --dangerously-skip-permissions -p "Read program.md and start autoresearch
 
 ## License
 
-MIT
+MIT — no warranty, no liability, use at your own risk.
