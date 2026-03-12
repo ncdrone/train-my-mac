@@ -115,11 +115,7 @@ echo -e "  ${CYAN}ANE PID: $ANE_PID${NC}"
 echo -e "  ${PINK}Starting MLX...${NC}"
 
 cd "$MLX_DIR"
-if command -v uv &>/dev/null; then
-    uv run train.py > "$MLX_LOG" 2>&1 &
-else
-    python3 train.py > "$MLX_LOG" 2>&1 &
-fi
+uv run train.py > "$MLX_LOG" 2>&1 &
 MLX_PID=$!
 cd "$SCRIPT_DIR"
 

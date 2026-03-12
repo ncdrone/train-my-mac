@@ -192,11 +192,7 @@ if [ "$DO_MLX" = true ]; then
     echo "  Running MLX baseline..."
     START_TIME=$(date +%s)
 
-    if command -v uv &>/dev/null; then
-        uv run train.py > "$MLX_LOG" 2>&1 || true
-    else
-        python3 train.py > "$MLX_LOG" 2>&1 || true
-    fi
+    uv run train.py > "$MLX_LOG" 2>&1 || true
 
     END_TIME=$(date +%s)
     WALL_SEC=$((END_TIME - START_TIME))

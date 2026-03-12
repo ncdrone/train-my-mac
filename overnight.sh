@@ -178,11 +178,7 @@ if [ "$ENGINE" = "mlx" ]; then
 
     cd "$MLX_DIR"
 
-    if command -v uv &>/dev/null; then
-        uv run train.py 2>&1 | tee "$LOG_FILE"
-    else
-        python3 train.py 2>&1 | tee "$LOG_FILE"
-    fi
+    uv run train.py 2>&1 | tee "$LOG_FILE"
 
     EXIT_CODE=${PIPESTATUS[0]}
     cd "$SCRIPT_DIR"

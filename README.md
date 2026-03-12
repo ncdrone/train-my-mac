@@ -4,6 +4,42 @@ Train a GPT on your Mac. For real.
 
 Not inference. Not fine-tuning someone else's model. Training from scratch.
 
+## Quick Start
+
+```bash
+git clone https://github.com/ncdrone/train-my-mac.git
+cd train-my-mac
+bash setup.sh
+```
+
+That's it. One script does everything: checks your hardware, clones the engines, installs deps, downloads data, builds the native binary, and runs smoke tests.
+
+Then train:
+
+```bash
+bash sweep.sh         # find your best config (~30 min)
+bash overnight.sh     # full ANE training run (~5-8 hours)
+bash overnight.sh mlx # or train on MLX instead
+bash gossip.sh        # run both engines simultaneously (advanced)
+```
+
+Pass `--yes` to skip all prompts:
+
+```bash
+bash setup.sh --yes
+```
+
+### Requirements
+
+- Apple Silicon Mac (M1 or later)
+- 16 GB RAM minimum
+- Xcode Command Line Tools (`xcode-select --install`)
+- [uv](https://docs.astral.sh/uv/) (auto-installed if missing)
+
+---
+
+## What This Is
+
 Two accelerators. One chip. Your Mac.
 
 - **ANE** (Apple Neural Engine) — native Obj-C, private APIs, 38 TOPS
@@ -37,7 +73,7 @@ Your Mac. Your risk.
 
 ---
 
-## Hardware Requirements
+## Hardware Tiers
 
 | Tier | Memory | Examples | What You Get |
 |------|--------|---------|--------------|
@@ -50,108 +86,16 @@ Below 16GB: not supported.
 
 ---
 
-## Getting Started
+## What Setup Does
 
-```bash
-git clone https://github.com/ncdrone/train-my-mac.git
-cd train-my-mac
-bash setup.sh
-```
+`setup.sh` handles everything in order:
 
-The setup script will:
-1. Check your hardware and recommend a tier
-2. Clone the training repos into `engines/` (ANE + MLX — not included in this repo)
-3. Install dependencies
-4. Download the Karpathy climbmix-400B dataset (~500 MB)
-5. Build the native ANE binary
-6. Set up the MLX environment
-7. Run smoke tests on both accelerators
-
-Then:
-```bash
-bash sweep.sh         # Find your best config (~30 min per accelerator)
-bash overnight.sh     # Full training run (~5-8 hours)
-bash overnight.sh mlx # Or train on MLX instead
-bash gossip.sh        # Run both with gossip (advanced)
-```
-
----
-
-## What We Did
-
-We built an autonomous research loop on Apple Silicon.
-
-An AI agent modifies training code.
-Runs a 5-minute experiment.
-Evaluates `val_bpb` (validation bits per byte — lower is better).
-Keeps the change if it improved. Discards if it didn't.
-Repeats overnight.
-
-400+ experiments. Three accelerators. One M4 Max 128GB.
-
-**ANE best:** val_bpb = 1.595 (72K steps, 8.2 hours, native Obj-C)
-**MLX best:** val_bpb = 1.266 (Muon + AdamW optimizer, 259 experiments)
-
-The gap between them? That's where the research is.
-
----
-
-## The Methodology
-
-This is how we approached it. Use it as a starting point.
-
-**Change one thing at a time.**
-If you change LR and warmup simultaneously and it improves, you don't know which helped.
-
-**5-minute runs are for screening, not conclusions.**
-They tell you what's promising. The overnight run tells you the truth.
-
-**val_bpb is the only metric that matters.**
-Training loss can lie (overfitting). Validation bits-per-byte on held-out data is ground truth. Lower is better.
-
-**Think in relative terms.**
-Going from 2.0 to 1.8 is huge. Going from 1.60 to 1.59 might not be worth added complexity.
-
-**When things explode, that's data.**
-Activation magnitudes above 50 mean something is wrong. But knowing *when* it explodes tells you about stability boundaries.
-
-**Simpler code wins.**
-If you can remove code and get the same val_bpb, that's a great outcome.
-
-**Log everything.**
-You will want to go back and compare.
-
----
-
-## The Two Engines
-
-### ANE (Apple Neural Engine)
-
-Native Obj-C. Uses private `AppleNeuralEngine.framework` APIs.
-Weights packed into IOSurface inputs. Kernels compile once at startup.
-Weight updates are just memcpy. No recompilation.
-
-- 48.8M param GPT (NL=6, SEQ=512, DIM=768)
-- ~80-100ms/step on M4 Max
-- Invisible to Activity Monitor
-- Best: val_bpb = 1.595
-
-### MLX (Apple's ML Framework)
-
-Python. Apple's native ML framework, purpose-built for Apple Silicon.
-Native bf16. Unified memory. Muon + AdamW optimizer.
-
-- 15.7M param GPT (optimized architecture)
-- Native bf16 (unlike MPS where it was 2.6x slower)
-- Best: val_bpb = 1.266
-
-### Gossip System
-
-Both engines write results to a shared JSONL file.
-Each agent reads the other's experiments before planning its next one.
-Cross-pollination: ANE discoveries inform MLX experiments and vice versa.
-
-The shared file lives at `~/.cache/autoresearch/gossip/shared_experiments.jsonl`.
+1. Checks your hardware and recommends a tier
+2. Clones the training engines into `engines/` (ANE + MLX)
+3. Installs all dependencies via `uv sync`
+4. Downloads the Karpathy climbmix-400B dataset (~500 MB)
+5. Builds the native ANE binary
+6. Runs smoke tests on both accelerators
 
 ---
 
@@ -182,6 +126,8 @@ bash overnight.sh           # ANE overnight
 bash overnight.sh mlx       # MLX overnight
 bash overnight.sh --lr 5e-4 # override config
 ```
+
+Launches in tmux automatically so closing your terminal won't kill the run.
 
 When it finishes, `visualize.py` generates a results graphic comparing your run to our research.
 
@@ -217,6 +163,82 @@ Getting within 0.1-0.2 of those on lesser hardware is a great result.
 
 ---
 
+## The Two Engines
+
+### ANE (Apple Neural Engine)
+
+Native Obj-C. Uses private `AppleNeuralEngine.framework` APIs.
+Weights packed into IOSurface inputs. Kernels compile once at startup.
+Weight updates are just memcpy. No recompilation.
+
+- 48.8M param GPT (NL=6, SEQ=512, DIM=768)
+- ~80-100ms/step on M4 Max
+- Invisible to Activity Monitor
+- Best: val_bpb = 1.595
+
+### MLX (Apple's ML Framework)
+
+Python. Apple's native ML framework, purpose-built for Apple Silicon.
+Native bf16. Unified memory. Muon + AdamW optimizer.
+
+- 15.7M param GPT (optimized architecture)
+- Native bf16 (unlike MPS where it was 2.6x slower)
+- Best: val_bpb = 1.266
+
+### Gossip System
+
+Both engines write results to a shared JSONL file.
+Each agent reads the other's experiments before planning its next one.
+Cross-pollination: ANE discoveries inform MLX experiments and vice versa.
+
+The shared file lives at `~/.cache/autoresearch/gossip/shared_experiments.jsonl`.
+
+---
+
+## What We Did
+
+We built an autonomous research loop on Apple Silicon.
+
+An AI agent modifies training code.
+Runs a 5-minute experiment.
+Evaluates `val_bpb` (validation bits per byte — lower is better).
+Keeps the change if it improved. Discards if it didn't.
+Repeats overnight.
+
+400+ experiments. Three accelerators. One M4 Max 128GB.
+
+**ANE best:** val_bpb = 1.595 (72K steps, 8.2 hours, native Obj-C)
+**MLX best:** val_bpb = 1.266 (Muon + AdamW optimizer, 259 experiments)
+
+The gap between them? That's where the research is.
+
+---
+
+## The Methodology
+
+**Change one thing at a time.**
+If you change LR and warmup simultaneously and it improves, you don't know which helped.
+
+**5-minute runs are for screening, not conclusions.**
+They tell you what's promising. The overnight run tells you the truth.
+
+**val_bpb is the only metric that matters.**
+Training loss can lie (overfitting). Validation bits-per-byte on held-out data is ground truth. Lower is better.
+
+**Think in relative terms.**
+Going from 2.0 to 1.8 is huge. Going from 1.60 to 1.59 might not be worth added complexity.
+
+**When things explode, that's data.**
+Activation magnitudes above 50 mean something is wrong. But knowing *when* it explodes tells you about stability boundaries.
+
+**Simpler code wins.**
+If you can remove code and get the same val_bpb, that's a great outcome.
+
+**Log everything.**
+You will want to go back and compare.
+
+---
+
 ## Going Further
 
 **Modify the training code.** ANE: `engines/autoresearch-ANE/native/training/train.m`. MLX: `engines/autoresearch-mlx/train.py`. Change something, run 5 minutes, see what happens.
@@ -248,7 +270,7 @@ claude --dangerously-skip-permissions -p "Read program.md and start autoresearch
 | OOM / memory pressure | Use light preset or MLX only |
 | Fans spinning hard | Normal. If ms/step climbs, thermal throttling — pause. |
 | val_bpb plateaus | More steps. Model still improving at 40K+. |
-| MLX: bf16 errors | Update MLX: `pip install -U mlx` |
+| MLX: bf16 errors | `uv sync` in `engines/autoresearch-mlx/` |
 
 ---
 

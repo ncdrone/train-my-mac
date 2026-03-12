@@ -1,12 +1,34 @@
 #!/bin/bash
 # setup.sh — One-time setup for train-my-mac
 # Clones training repos, installs deps, downloads data, builds binaries
+# Usage: bash setup.sh          # interactive (prompts before installing)
+#        bash setup.sh --yes    # accept all prompts (auto-install everything)
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENGINES_DIR="$SCRIPT_DIR/engines"
 CACHE_DIR="$HOME/.cache/autoresearch"
 RESULTS_DIR="$SCRIPT_DIR/results"
+
+# --yes flag: accept all prompts
+AUTO_YES=false
+if [ "$1" = "--yes" ] || [ "$1" = "-y" ]; then
+    AUTO_YES=true
+fi
+
+# Helper: prompt user or auto-accept
+confirm_or_exit() {
+    local prompt="$1"
+    local expected="${2:-y}"
+    if [ "$AUTO_YES" = true ]; then
+        return 0
+    fi
+    read -p "$prompt" answer
+    if [ "$answer" != "$expected" ]; then
+        echo "Exiting."
+        exit 0
+    fi
+}
 
 # Colors
 RED='\033[0;31m'
@@ -31,13 +53,18 @@ echo "  The MLX engine uses Apple's public ML framework. No private APIs."
 echo ""
 echo "  Your Mac. Your risk. No warranty."
 echo ""
-read -p "  Type \"yes\" to continue: " confirm
-echo ""
 
-if [ "$confirm" != "yes" ]; then
-    echo "Exiting."
-    exit 0
+if [ "$AUTO_YES" = true ]; then
+    echo -e "  ${YELLOW}--yes flag: accepting all prompts automatically.${NC}"
+    echo ""
+else
+    echo "  This script will install: uv, Python packages (~2GB for torch),"
+    echo "  clone 2 repos, download ~500MB of training data, and build a"
+    echo "  native binary with Xcode command line tools."
+    echo ""
+    confirm_or_exit "  Type \"yes\" to continue: " "yes"
 fi
+echo ""
 
 # ─── Step 1: Hardware Detection ───────────────────────────────────────────────
 
@@ -131,7 +158,7 @@ if [ -d "$ENGINES_DIR/autoresearch-mlx" ]; then
     echo -e "  ${GREEN}MLX repo already cloned.${NC}"
 else
     echo "  Cloning MLX training engine..."
-    git clone https://github.com/ncdrone/autoresearch-mlx.git "$ENGINES_DIR/autoresearch-mlx"
+    git clone https://github.com/trevin-creator/autoresearch-mlx.git "$ENGINES_DIR/autoresearch-mlx"
     echo -e "  ${GREEN}MLX repo cloned.${NC}"
 fi
 echo ""
@@ -151,52 +178,37 @@ EOF
 
 # ─── Step 3: Dependencies ─────────────────────────────────────────────────────
 
-echo -e "${CYAN}[3/6] Checking dependencies...${NC}"
+echo -e "${CYAN}[3/6] Installing dependencies...${NC}"
 echo ""
 
-# Check uv
-if command -v uv &>/dev/null; then
-    HAS_UV=true
-    echo -e "  ${GREEN}uv found.${NC}"
-else
-    HAS_UV=false
-    echo -e "  ${DIM}uv not found. Using pip.${NC}"
-fi
-
-# ANE deps (via pip — ANE repo uses prepare.py directly)
-MISSING=""
-for pkg in torch numpy pyarrow matplotlib requests rustbpe tiktoken; do
-    if ! python3 -c "import $pkg" 2>/dev/null; then
-        MISSING="$MISSING $pkg"
-    fi
-done
-
-if [ -n "$MISSING" ]; then
-    echo -e "  ${YELLOW}Missing:${NC}$MISSING"
-    if [[ "$MISSING" == *"torch"* ]]; then
-        echo -e "  ${DIM}Note: torch is ~2GB${NC}"
-    fi
-    read -p "  Install? [y/N]: " install_deps
-    if [ "$install_deps" = "y" ] || [ "$install_deps" = "Y" ]; then
-        pip3 install $MISSING
-        echo -e "  ${GREEN}Installed.${NC}"
-    else
-        echo -e "${RED}Cannot continue without dependencies.${NC}"
+# Require uv — it handles Python versions, venvs, and deps cleanly
+if ! command -v uv &>/dev/null; then
+    echo -e "  ${YELLOW}uv not found. Installing...${NC}"
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+    if ! command -v uv &>/dev/null; then
+        echo -e "${RED}ERROR: Failed to install uv. Install manually: https://docs.astral.sh/uv/${NC}"
         exit 1
     fi
-else
-    echo -e "  ${GREEN}All ANE dependencies present.${NC}"
 fi
+echo -e "  ${GREEN}uv found.${NC}"
 
-# MLX deps (via uv or pip)
+# ANE deps — swap to Mac-specific pyproject.toml (default is CUDA)
+echo "  Setting up ANE environment..."
+if [ -f "$ANE_DIR/pyproject_mac.toml" ]; then
+    cp "$ANE_DIR/pyproject_mac.toml" "$ANE_DIR/pyproject.toml"
+    rm -f "$ANE_DIR/uv.lock"
+fi
+cd "$ANE_DIR"
+uv sync 2>&1 | tail -3
+echo -e "  ${GREEN}ANE environment ready.${NC}"
+cd "$SCRIPT_DIR"
+
+# MLX deps
 echo ""
 echo "  Setting up MLX environment..."
 cd "$MLX_DIR"
-if [ "$HAS_UV" = true ]; then
-    uv sync 2>&1 | tail -3
-else
-    pip3 install mlx 2>/dev/null
-fi
+uv sync 2>&1 | tail -3
 echo -e "  ${GREEN}MLX environment ready.${NC}"
 cd "$SCRIPT_DIR"
 echo ""
@@ -214,11 +226,11 @@ if [ -f "$ANE_DATA/train_karpathy.bin" ] && [ -f "$ANE_DATA/val_karpathy.bin" ];
 else
     echo "  Downloading (~500MB) and tokenizing..."
     cd "$ANE_DIR"
-    python3 prepare.py --num-shards 8
+    uv run prepare.py --num-shards 8
     echo ""
 
     # Bridge: .pt -> .npy for convert script
-    python3 -c "
+    uv run python -c "
 import torch, numpy as np, os
 pt = os.path.expanduser('~/.cache/autoresearch/tokenizer/token_bytes.pt')
 npy = os.path.expanduser('~/.cache/autoresearch/tokenizer/token_bytes.npy')
@@ -228,7 +240,7 @@ if not os.path.exists(npy) and os.path.exists(pt):
 "
 
     # Convert to binary
-    python3 "$ANE_NATIVE/scripts/convert_karpathy_data.py"
+    uv run python "$ANE_NATIVE/scripts/convert_karpathy_data.py"
     cd "$SCRIPT_DIR"
 fi
 
@@ -238,11 +250,7 @@ if [ -f "$CACHE_DIR/tokenizer/token_bytes.npy" ]; then
 else
     echo "  Preparing MLX data format..."
     cd "$MLX_DIR"
-    if [ "$HAS_UV" = true ]; then
-        uv run prepare.py --num-shards 8
-    else
-        python3 prepare.py --num-shards 8
-    fi
+    uv run prepare.py --num-shards 8
     cd "$SCRIPT_DIR"
 fi
 echo ""
@@ -308,11 +316,7 @@ fi
 # MLX smoke test
 echo "  MLX (50 steps)..."
 cd "$MLX_DIR"
-if [ "$HAS_UV" = true ]; then
-    timeout 30 uv run train.py > "$RESULTS_DIR/smoke_mlx.log" 2>&1 || true
-else
-    timeout 30 python3 train.py > "$RESULTS_DIR/smoke_mlx.log" 2>&1 || true
-fi
+timeout 30 uv run train.py > "$RESULTS_DIR/smoke_mlx.log" 2>&1 || true
 cd "$SCRIPT_DIR"
 
 if grep -q "val_bpb\|step" "$RESULTS_DIR/smoke_mlx.log" 2>/dev/null; then
